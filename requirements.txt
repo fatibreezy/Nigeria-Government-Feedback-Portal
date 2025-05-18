@@ -1,7 +1,8 @@
 streamlit
+transformers
+torch
+textblob
 pandas
-plotly
-vaderSentiment
-transformers==4.21.3
-torch==1.12.1
+matplotlib
+
 
