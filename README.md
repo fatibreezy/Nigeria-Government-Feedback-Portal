@@ -1,20 +1,27 @@
 # Nigeria-Government-Feedback-Portal
 
-A citizen-driven platform for collecting and analyzing feedback, showcasing government updates, and interacting with an AI chatbot.
 
-## 🔍 Features
+An AI-powered citizen driven engagement platform  for collecting and analyzing feedback, showcasing government updates, and interacting with an AI chatbot built with **Streamlit** and enhanced by **Natural Language Processing (NLP)** and **large language models (LLMs)**.
 
-- 🧠 AI Chatbot powered by a lightweight local model (DistilGPT2).
-- ✍️ Anonymous citizen feedback submission.
-- 📊 Real-time sentiment analysis with visualizations.
-- 🏛️ Government news & development update board.
-- 📬 Suggestion box for unprompted ideas from the public.
-- 🛠️ Admin dashboard for analytics and download access.
+---  
+
+## 🔧 Features
+
+- 🤖 Chatbot with locally running **LLaMA** model (`llama-cpp`)
+- 📊 Real-time sentiment analysis and downloadable feedback dataset
+- 📝 Anonymous feedback submission (no login required)
+- 🔐 Admin dashboard with password-protected access
+- 📢 Section for highlighting key government updates (e.g., 3MTT program)
 
 ## 🧠 AI Integration
 
-- Local chatbot using HuggingFace transformers.
-- TextBlob used for sentiment classification (Positive, Neutral, Negative).
-- Visualizations rendered with `matplotlib` and `pandas`.
+This platform uses **AI in two powerful ways**:
+
+- 🤖 **Local Chatbot (LLaMA-powered)**: A chatbot built using a lightweight **LLaMA model** via `llama-cpp`, capable of answering questions related to government services, policies, or general inquiries **without internet or cloud dependency**.
+  
+- 📈 **Sentiment Analysis (TextBlob)**: Every user feedback is analyzed using **NLP sentiment classification**, categorizing submissions into **Positive**, **Negative**, or **Neutral** responses in real-time. This helps stakeholders assess public mood and act on urgent concerns.
+
+
+
 
 
