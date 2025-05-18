@@ -1,103 +1,137 @@
 import streamlit as st
 import pandas as pd
-import datetime
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import plotly.express as px
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import matplotlib.pyplot as plt
+from textblob import TextBlob
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
+import datetime
 
 # Load chatbot model
 @st.cache_resource
-def load_chatbot():
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
-    model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
+    model = AutoModelForCausalLM.from_pretrained("distilgpt2")
     return tokenizer, model
 
-tokenizer, model = load_chatbot()
-analyzer = SentimentIntensityAnalyzer()
+tokenizer, model = load_model()
 
-if 'history' not in st.session_state:
-    st.session_state.history = []
+# Function to generate chatbot response
+def generate_response(prompt):
+    inputs = tokenizer.encode(prompt, return_tensors="pt")
+    outputs = model.generate(inputs, max_length=100, do_sample=True, temperature=0.7)
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return response[len(prompt):]
 
-# Admin dashboard in sidebar
-st.sidebar.title("Admin Dashboard")
-if st.sidebar.checkbox("Show Feedback Table"):
-    if "feedback_data.csv" in st.session_state:
-        df = st.session_state["feedback_data.csv"]
-        st.sidebar.dataframe(df)
-        st.sidebar.download_button("Download Feedback", df.to_csv(index=False), "feedback.csv")
-    else:
-        st.sidebar.info("No feedback submitted yet.")
+# Sentiment analysis
+def analyze_sentiment(text):
+    blob = TextBlob(text)
+    polarity = blob.sentiment.polarity
+    if polarity > 0: return 'Positive'
+    elif polarity < 0: return 'Negative'
+    else: return 'Neutral'
 
-# Page Title
-st.title("🇳🇬 Nigeria Government Feedback & Info Hub")
-st.markdown("An AI-powered platform to share suggestions, see government updates, and analyze public sentiment.")
+# Load or create CSV
+def load_feedback():
+    try:
+        return pd.read_csv("feedback.csv")
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["Name", "Email", "Location", "Message", "Sentiment", "Timestamp"])
 
-# Chat Section
-st.subheader("🤖 Ask Government Chatbot")
-user_input = st.text_input("Enter your message")
-if user_input:
-    new_user_input_ids = tokenizer.encode(user_input + tokenizer.eos_token, return_tensors='pt')
-    bot_input_ids = torch.cat([new_user_input_ids], dim=-1)
-    chat_output = model.generate(bot_input_ids, max_length=1000, pad_token_id=tokenizer.eos_token_id)
-    reply = tokenizer.decode(chat_output[:, bot_input_ids.shape[-1]:][0], skip_special_tokens=True)
-    st.session_state.history.append((user_input, reply))
-    st.markdown(f"**You:** {user_input}")
-    st.markdown(f"**Bot:** {reply}")
+def save_feedback(df):
+    df.to_csv("feedback.csv", index=False)
 
-# Display full chat
-if st.session_state.history:
-    st.markdown("---")
-    for q, a in reversed(st.session_state.history):
-        st.markdown(f"**You:** {q}")
-        st.markdown(f"**Bot:** {a}")
+def load_suggestions():
+    try:
+        return pd.read_csv("suggestions.csv")
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["Suggestion", "Timestamp"])
 
-# Feedback Form
-st.subheader("📢 Share Your Feedback or Suggestion")
-with st.form("feedback_form"):
-    feedback = st.text_area("Your suggestion or complaint")
-    name = st.text_input("Name (optional)")
-    submitted = st.form_submit_button("Submit")
+def save_suggestions(df):
+    df.to_csv("suggestions.csv", index=False)
 
-    if submitted and feedback:
-        sentiment = analyzer.polarity_scores(feedback)
-        score = sentiment['compound']
-        tone = "Positive" if score > 0.05 else "Negative" if score < -0.05 else "Neutral"
-        time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# UI
+st.set_page_config(page_title="Nigeria Gov Feedback", layout="wide")
+st.title("🇳🇬 Nigeria Government Feedback & Updates Portal")
 
-        new_data = pd.DataFrame([[name, feedback, tone, score, time]],
-                                columns=["Name", "Feedback", "Sentiment", "Score", "Timestamp"])
+menu = st.sidebar.selectbox("Choose a section", ["Chat with AI", "Submit Feedback", "Suggestions", "Government Updates", "Admin Dashboard"])
 
-        if "feedback_data.csv" not in st.session_state:
-            st.session_state["feedback_data.csv"] = new_data
-        else:
-            st.session_state["feedback_data.csv"] = pd.concat([st.session_state["feedback_data.csv"], new_data], ignore_index=True)
+# Chatbot
+if menu == "Chat with AI":
+    st.subheader("Ask our AI Assistant anything")
+    user_input = st.text_input("Your question:")
+    if st.button("Ask"):
+        if user_input:
+            response = generate_response(user_input)
+            st.success(response)
 
-        st.success("Thanks for your feedback!")
+# Feedback
+elif menu == "Submit Feedback":
+    st.subheader("Submit Your Feedback")
+    name = st.text_input("Name (Optional)")
+    email = st.text_input("Email (Optional)")
+    location = st.text_input("Location (Optional)")
+    message = st.text_area("Your Message")
 
-# Sentiment Analysis Visualization
-st.subheader("📊 Real-Time Sentiment Analysis")
-if "feedback_data.csv" in st.session_state:
-    df = st.session_state["feedback_data.csv"]
-    fig = px.histogram(df, x="Sentiment", color="Sentiment", title="Feedback Sentiment Summary")
-    st.plotly_chart(fig)
+    if st.button("Submit Feedback"):
+        if message:
+            sentiment = analyze_sentiment(message)
+            timestamp = datetime.datetime.now()
+            new_data = {"Name": name, "Email": email, "Location": location, "Message": message,
+                        "Sentiment": sentiment, "Timestamp": timestamp}
+            df = load_feedback()
+            df = df.append(new_data, ignore_index=True)
+            save_feedback(df)
+            st.success("Feedback submitted!")
+
+# Suggestions
+elif menu == "Suggestions":
+    st.subheader("Suggest Something to the Government")
+    suggestion = st.text_area("Enter your suggestion here")
+    if st.button("Submit Suggestion"):
+        if suggestion:
+            timestamp = datetime.datetime.now()
+            df = load_suggestions()
+            df = df.append({"Suggestion": suggestion, "Timestamp": timestamp}, ignore_index=True)
+            save_suggestions(df)
+            st.success("Suggestion submitted!")
 
 # Government Updates
-st.subheader("📰 Government Updates")
-updates = [
-    {"title": "3MTT 2nd Cohort Training Begins", "desc": "Thousands of Nigerians onboarded into tech learning."},
-    {"title": "NYSC Members to Receive Increased Allowance", "desc": "FG raises corp members' monthly stipends."},
-    {"title": "Digital Economy Strategy Released", "desc": "NDE unveils plan for tech-driven growth."},
-    {"title": "Tinubu Approves Student Loan Rollout", "desc": "Application starts May 2025."},
-    {"title": "Cybersecurity Bill Passed", "desc": "Aims to protect digital infrastructure."},
-    {"title": "Digital ID Enrollment Hits 70M+", "desc": "NIMC sees record surge."},
-    {"title": "Kogi State Partners on Tech Talent", "desc": "Up to 10,000 youths to benefit."},
-    {"title": "Start-Up Grants for Youth", "desc": "FG disburses ₦2B in startup funds."},
-    {"title": "NITDA Expands AI Research", "desc": "AI research centres launched nationwide."},
-    {"title": "Lagos Launches Digital Skills Park", "desc": "5,000 youths enrolled in Phase 1."}
-]
-for u in updates:
-    st.markdown(f"🔹 **{u['title']}** — {u['desc']}")
+elif menu == "Government Updates":
+    st.subheader("Latest Government Updates")
+    updates = [
+        {"title": "3MTT Skills Training Launch", "desc": "Massive tech training rollout across Nigeria"},
+        {"title": "NYSC Reforms", "desc": "New allowances and improved digital skills curriculum"},
+        {"title": "Education Budget Increased", "desc": "Government increases education sector allocation"},
+        {"title": "Health Insurance Plan", "desc": "New health insurance for informal workers"},
+        {"title": "Youths in Agritech Program", "desc": "Funding and tools provided for smart farming"},
+        {"title": "Public WiFi Initiative", "desc": "Free WiFi in markets and parks"},
+        {"title": "Data Protection Bill", "desc": "Improved data privacy for Nigerians"},
+        {"title": "Digital Census Launch", "desc": "Smart census to improve accuracy"},
+        {"title": "Tech Export Drive", "desc": "Promoting Nigerian software exports"},
+        {"title": "SME Grants", "desc": "New round of capital for small businesses"},
+    ]
 
-st.markdown("---")
-st.caption("Powered by the Federal Government of Nigeria – All information is authentic and updated.")
+    for update in updates:
+        st.markdown(f"**{update['title']}**")
+        st.write(update["desc"])
+        st.markdown("---")
+
+# Admin Dashboard
+elif menu == "Admin Dashboard":
+    st.subheader("Admin Dashboard")
+    st.info("Download or analyze feedback and suggestions.")
+
+    df_feedback = load_feedback()
+    df_suggestions = load_suggestions()
+
+    st.markdown("### Feedback Analysis")
+    if not df_feedback.empty:
+        sentiment_counts = df_feedback["Sentiment"].value_counts()
+        st.bar_chart(sentiment_counts)
+        st.dataframe(df_feedback.tail(10))
+        st.download_button("Download Feedback CSV", df_feedback.to_csv(index=False), "feedback.csv")
+
+    st.markdown("### Suggestions Overview")
+    if not df_suggestions.empty:
+        st.dataframe(df_suggestions.tail(10))
+        st.download_button("Download Suggestions CSV", df_suggestions.to_csv(index=False), "suggestions.csv")
