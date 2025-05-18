@@ -1,137 +1,81 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-from textblob import TextBlob
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+import plotly.express as px
 import datetime
+import os
+from textblob import TextBlob
+from llama_cpp import Llama
 
-# Load chatbot model
 @st.cache_resource
 def load_model():
-    tokenizer = AutoTokenizer.from_pretrained("distilgpt2")
-    model = AutoModelForCausalLM.from_pretrained("distilgpt2")
-    return tokenizer, model
+    return Llama(model_path="Nous-Hermes-2-Mistral-7B.Q4_K_M.gguf", n_ctx=2048)
 
-tokenizer, model = load_model()
+llm = load_model()
 
-# Function to generate chatbot response
-def generate_response(prompt):
-    inputs = tokenizer.encode(prompt, return_tensors="pt")
-    outputs = model.generate(inputs, max_length=100, do_sample=True, temperature=0.7)
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return response[len(prompt):]
+st.set_page_config(page_title="Nigeria Gov Feedback Portal", layout="wide")
+st.markdown("""
+    <style>
+    .main { background-color: #f4f6f8; }
+    .stButton>button { background-color: #007BFF; color: white; }
+    </style>
+""", unsafe_allow_html=True)
 
-# Sentiment analysis
-def analyze_sentiment(text):
-    blob = TextBlob(text)
-    polarity = blob.sentiment.polarity
-    if polarity > 0: return 'Positive'
-    elif polarity < 0: return 'Negative'
-    else: return 'Neutral'
+st.title("🇳🇬 Nigeria Government Feedback Portal")
+st.subheader("📢 A citizen feedback system powered by AI")
 
-# Load or create CSV
-def load_feedback():
-    try:
-        return pd.read_csv("feedback.csv")
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["Name", "Email", "Location", "Message", "Sentiment", "Timestamp"])
+tab1, tab2, tab3 = st.tabs(["🗨️ Chat with AI", "📊 Sentiment Dashboard", "📋 Submit Feedback"])
 
-def save_feedback(df):
-    df.to_csv("feedback.csv", index=False)
+# --- CHATBOT ---
+with tab1:
+    st.header("Ask Government-Related Questions")
+    user_input = st.text_input("Enter your question:")
+    if user_input:
+        prompt = f"[INST] {user_input} [/INST]"
+        response = llm(prompt, max_tokens=200)
+        answer = response['choices'][0]['text'].strip()
+        st.markdown(f"**AI Response:** {answer}")
 
-def load_suggestions():
-    try:
-        return pd.read_csv("suggestions.csv")
-    except FileNotFoundError:
-        return pd.DataFrame(columns=["Suggestion", "Timestamp"])
+# --- SENTIMENT ANALYSIS ---
+feedback_data_file = "feedback_data.csv"
+if os.path.exists(feedback_data_file):
+    df = pd.read_csv(feedback_data_file)
+else:
+    df = pd.DataFrame(columns=["timestamp", "feedback", "sentiment"])
 
-def save_suggestions(df):
-    df.to_csv("suggestions.csv", index=False)
+with tab2:
+    st.header("📈 Real-Time Sentiment Analysis")
+    if not df.empty:
+        fig = px.histogram(df, x="sentiment", color="sentiment", title="Feedback Sentiment Distribution")
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df.tail(10))
+        st.download_button("📥 Download Feedback", df.to_csv(index=False), "feedback_data.csv")
+    else:
+        st.info("No feedback submitted yet.")
 
-# UI
-st.set_page_config(page_title="Nigeria Gov Feedback", layout="wide")
-st.title("🇳🇬 Nigeria Government Feedback & Updates Portal")
+# --- FEEDBACK SUBMISSION ---
+with tab3:
+    st.header("📝 Share Your Thoughts")
+    feedback = st.text_area("Your feedback", placeholder="Type your suggestions or concerns...")
+    name = st.text_input("Optional: Your name")
+    if st.button("Submit"):
+        if feedback:
+            sentiment = TextBlob(feedback).sentiment.polarity
+            label = "Positive" if sentiment > 0 else "Negative" if sentiment < 0 else "Neutral"
+            new_entry = pd.DataFrame([[datetime.datetime.now(), feedback, label]], columns=["timestamp", "feedback", "sentiment"])
+            df = pd.concat([df, new_entry], ignore_index=True)
+            df.to_csv(feedback_data_file, index=False)
+            st.success("✅ Thank you! Your feedback has been recorded.")
+        else:
+            st.error("Feedback cannot be empty!")
 
-menu = st.sidebar.selectbox("Choose a section", ["Chat with AI", "Submit Feedback", "Suggestions", "Government Updates", "Admin Dashboard"])
-
-# Chatbot
-if menu == "Chat with AI":
-    st.subheader("Ask our AI Assistant anything")
-    user_input = st.text_input("Your question:")
-    if st.button("Ask"):
-        if user_input:
-            response = generate_response(user_input)
-            st.success(response)
-
-# Feedback
-elif menu == "Submit Feedback":
-    st.subheader("Submit Your Feedback")
-    name = st.text_input("Name (Optional)")
-    email = st.text_input("Email (Optional)")
-    location = st.text_input("Location (Optional)")
-    message = st.text_area("Your Message")
-
-    if st.button("Submit Feedback"):
-        if message:
-            sentiment = analyze_sentiment(message)
-            timestamp = datetime.datetime.now()
-            new_data = {"Name": name, "Email": email, "Location": location, "Message": message,
-                        "Sentiment": sentiment, "Timestamp": timestamp}
-            df = load_feedback()
-            df = df.append(new_data, ignore_index=True)
-            save_feedback(df)
-            st.success("Feedback submitted!")
-
-# Suggestions
-elif menu == "Suggestions":
-    st.subheader("Suggest Something to the Government")
-    suggestion = st.text_area("Enter your suggestion here")
-    if st.button("Submit Suggestion"):
-        if suggestion:
-            timestamp = datetime.datetime.now()
-            df = load_suggestions()
-            df = df.append({"Suggestion": suggestion, "Timestamp": timestamp}, ignore_index=True)
-            save_suggestions(df)
-            st.success("Suggestion submitted!")
-
-# Government Updates
-elif menu == "Government Updates":
-    st.subheader("Latest Government Updates")
-    updates = [
-        {"title": "3MTT Skills Training Launch", "desc": "Massive tech training rollout across Nigeria"},
-        {"title": "NYSC Reforms", "desc": "New allowances and improved digital skills curriculum"},
-        {"title": "Education Budget Increased", "desc": "Government increases education sector allocation"},
-        {"title": "Health Insurance Plan", "desc": "New health insurance for informal workers"},
-        {"title": "Youths in Agritech Program", "desc": "Funding and tools provided for smart farming"},
-        {"title": "Public WiFi Initiative", "desc": "Free WiFi in markets and parks"},
-        {"title": "Data Protection Bill", "desc": "Improved data privacy for Nigerians"},
-        {"title": "Digital Census Launch", "desc": "Smart census to improve accuracy"},
-        {"title": "Tech Export Drive", "desc": "Promoting Nigerian software exports"},
-        {"title": "SME Grants", "desc": "New round of capital for small businesses"},
-    ]
-
-    for update in updates:
-        st.markdown(f"**{update['title']}**")
-        st.write(update["desc"])
-        st.markdown("---")
-
-# Admin Dashboard
-elif menu == "Admin Dashboard":
-    st.subheader("Admin Dashboard")
-    st.info("Download or analyze feedback and suggestions.")
-
-    df_feedback = load_feedback()
-    df_suggestions = load_suggestions()
-
-    st.markdown("### Feedback Analysis")
-    if not df_feedback.empty:
-        sentiment_counts = df_feedback["Sentiment"].value_counts()
-        st.bar_chart(sentiment_counts)
-        st.dataframe(df_feedback.tail(10))
-        st.download_button("Download Feedback CSV", df_feedback.to_csv(index=False), "feedback.csv")
-
-    st.markdown("### Suggestions Overview")
-    if not df_suggestions.empty:
-        st.dataframe(df_suggestions.tail(10))
-        st.download_button("Download Suggestions CSV", df_suggestions.to_csv(index=False), "suggestions.csv")
+# --- ADMIN PANEL ---
+with st.sidebar:
+    st.title("🔐 Admin Panel")
+    pwd = st.text_input("Enter admin password", type="password")
+    if pwd == "nigeria2025":
+        st.success("Access granted.")
+        st.write("Latest feedback data:")
+        st.dataframe(df)
+        st.download_button("📥 Download All Feedback", df.to_csv(index=False), "all_feedback.csv")
+    else:
+        st.warning("Enter password to access admin panel.")
