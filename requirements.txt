@@ -2,5 +2,6 @@ streamlit
 pandas
 plotly
 vaderSentiment
-transformers
-torch
+transformers==4.21.3
+torch==1.12.1
+
